@@ -86,6 +86,29 @@ const AnnotationType = {
   REDACT: 26,
 };
 
+const AnnotationStateModelType = {
+  MARKED: 'Marked',
+  REVIEW: 'Review'
+}
+
+const AnnotationMarkedState = {
+  MARKED: 'Marked',
+  UNMARKED: 'Unmarked'
+};
+
+const AnnotationReviewState = {
+  ACCEPTED: 'Accepted',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
+  COMPLETED: 'Completed',
+  NONE: 'None'
+};
+
+const AnnotationReplyType = {
+  GROUP: 'Group',
+  REPLY: 'R'
+}
+
 const AnnotationFlag = {
   INVISIBLE: 0x01,
   HIDDEN: 0x02,
@@ -1027,6 +1050,9 @@ export {
   AnnotationBorderStyleType,
   AnnotationFieldFlag,
   AnnotationFlag,
+  AnnotationMarkedState,
+  AnnotationReviewState,
+  AnnotationStateModelType,
   AnnotationType,
   FontType,
   ImageKind,

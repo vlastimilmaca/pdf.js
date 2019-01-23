@@ -16,8 +16,8 @@
 
 import {
   AnnotationBorderStyleType, AnnotationFieldFlag, AnnotationFlag,
-  AnnotationType, getInheritableProperty, OPS, stringToBytes, stringToPDFString,
-  Util, warn
+  AnnotationType, /*bytesToString,*/ getInheritableProperty, OPS,
+  stringToBytes, stringToPDFString, Util, warn
 } from '../shared/util';
 import { Catalog, FileSpec, ObjectLoader } from './obj';
 import { Dict, isDict, isName, isRef, isStream } from './primitives';
@@ -125,8 +125,35 @@ class AnnotationFactory {
       case 'Stamp':
         return new StampAnnotation(parameters);
 
+      case 'Caret':
+        return new CaretAnnotation(parameters);
+
+      case 'Sound':
+        return new SoundAnnotation(parameters);
+
+      case 'Movie':
+        return new MovieAnnotation(parameters);
+
       case 'FileAttachment':
         return new FileAttachmentAnnotation(parameters);
+
+      case 'Screen':
+        return new ScreenAnnotation(parameters);
+
+      case 'PrinterMark':
+        return new PrinterMarkAnnotation(parameters);
+
+      case 'TrapNet':
+        return new TrapNetAnnotation(parameters);
+
+      case 'Watermark':
+        return new WatermarkAnnotation(parameters);
+
+      case '3D':
+        return new ThreeDAnnotation(parameters);
+
+      case 'Redact':
+        return new RedactAnnotation(parameters);
 
       default:
         if (!subtype) {
@@ -166,6 +193,54 @@ function getTransformMatrix(rect, bbox, matrix) {
   ];
 }
 
+const pdfDateStringRegexp = new RegExp(
+  '^D:(\\d{4})(\\d{2})?(\\d{2})?(\\d{2})?' +
+  '(\\d{2})?(\\d{2})?([Z|+|-])?(\\d{2})?\'?(\\d{2})?\'?$'
+);
+
+const pdfDateStringMatchParse = function (match, year, month,
+  day, hour, minute, second, tz, tzHour, tzMinute) {
+  if (match === '') return;
+  let result = year + (month ? '-' + month : '') +
+    (day ? '-' + day : '');
+
+  if (hour) {
+    result +=
+      'T' + hour + ':' + (minute || '00') +
+      (second ? ':' + second : '') + (tz || '');
+
+    if (tzHour) {
+      result += tzHour + ':' + (tzMinute || '00');
+    }
+  }
+  return result;
+};
+/**
+ * Converts pdf date string to ISO8061 string.
+ * @param {any} str
+ * @return {undefined} When pdf date string doesn't meet spec of pdf date string.
+ * @throws {Error} When non-string or non-pdf-date-string is on input
+ * (Has to start with 'D:' and have at least length of 6 chars).
+ */
+function pdfDateStringToISOString(str) {
+
+  if (typeof str === 'string') {
+    let result = str.replace(
+      pdfDateStringRegexp,
+      pdfDateStringMatchParse
+    );
+
+    if (result === str || result === '') {
+      warn('Unsupported pdf date format: ' + str);
+      return;
+    }
+
+    return result;
+  }
+
+  throw new Error('Invalid argument for pdfDateStringToJsDateString');
+}
+
 class Annotation {
   constructor(params) {
     let dict = params.dict;
@@ -175,6 +250,10 @@ class Annotation {
     this.setColor(dict.getArray('C'));
     this.setBorderStyle(dict);
     this.setAppearance(dict);
+
+    if (dict.has('M')) {
+      this.setModifiedDate(dict.get('M'));
+    }
 
     // Expose public properties using a data object.
     this.data = {
@@ -186,6 +265,15 @@ class Annotation {
       rect: this.rectangle,
       subtype: params.subtype,
     };
+
+    if (dict.has('Contents')) { 
+      this.data.contents = stringToPDFString(dict.get('Contents') || '');
+    }
+
+    if (this.modifiedDate) {
+      this.data.modifiedDate = this.modifiedDate;
+    }
+
   }
 
   /**
@@ -395,6 +483,19 @@ class Annotation {
   }
 
   /**
+   * Set ModifiedDate (PdfStringDate) to annotation.
+   * @public
+   * @memberof Annotation
+   * @param {PdfStringDate} modifiedDate Date in PDF Date format (ASN.1 ISO)
+   */
+  setModifiedDate(modifiedDate) {
+    let dateString = pdfDateStringToISOString(modifiedDate);
+    if (dateString) {
+      this.modifiedDate = new Date(dateString);
+    }
+  }
+
+  /**
    * Prepare the annotation for working with a popup in the display layer.
    *
    * @private
@@ -410,6 +511,7 @@ class Annotation {
     this.data.hasPopup = dict.has('Popup');
     this.data.title = stringToPDFString(dict.get('T') || '');
     this.data.contents = stringToPDFString(dict.get('Contents') || '');
+
   }
 
   loadResources(keys) {
@@ -460,6 +562,58 @@ class Annotation {
         return opList;
       });
     });
+  }
+}
+
+/**
+ * Class for Markup Annotations
+ * defined in spec: PDF 32000-1:2008 (page 391, chapter 12.5.6.2)
+ */
+class MarkupAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+    let dict = parameters.dict;
+
+    if (!dict.has('C')) {
+      // Fall back to the default background color.
+      this.data.color = null;
+    }
+
+    this.data.hasPopup = dict.has('Popup');
+    this.data.title = stringToPDFString(dict.get('T') || '');
+
+  
+    if (dict.has('CreationDate')) {
+      let creationDateString = pdfDateStringToISOString(dict.get('CreationDate'));
+
+      if (creationDateString)
+        this.data.creationDate = new Date(creationDateString);
+    }
+
+    if (dict.has('IT')) {
+      this.data.intent = dict.get('IT').name;
+    }
+
+    if (dict.has('IRT')) {
+      this.data.inReplyTo = dict.getRaw('IRT').toString();
+      this.data.replyType = dict.has('RT') ? dict.get('RT').name : 'R';
+      // when this is reply to something,
+      // it shall not be rendered in pdf page on it's own.
+      //this.setAppearance(new Dict()); 
+    }
+
+    if (dict.has('Subj')) {
+      this.data.subject = stringToPDFString(dict.get('Subj'));
+    }
+
+    if (dict.has('RC')) {
+      let richText = dict.get('RC');
+      if (typeof richText === 'string') {
+        this.data.richText = stringToPDFString(richText);
+      }/* else if (isStream(richText)) {
+          this.data.subject = bytesToString(richText.getBytes());
+      } */
+    }
   }
 }
 
@@ -890,12 +1044,12 @@ class ChoiceWidgetAnnotation extends WidgetAnnotation {
   }
 }
 
-class TextAnnotation extends Annotation {
+class TextAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     const DEFAULT_ICON_SIZE = 22; // px
 
     super(parameters);
-
+    let dict = parameters.dict;
     this.data.annotationType = AnnotationType.TEXT;
 
     if (this.data.hasAppearance) {
@@ -903,11 +1057,17 @@ class TextAnnotation extends Annotation {
     } else {
       this.data.rect[1] = this.data.rect[3] - DEFAULT_ICON_SIZE;
       this.data.rect[2] = this.data.rect[0] + DEFAULT_ICON_SIZE;
-      this.data.name = parameters.dict.has('Name') ?
-                       parameters.dict.get('Name').name : 'Note';
+      this.data.name = dict.has('Name') ? dict.get('Name').name : 'Note';
     }
-    this._preparePopup(parameters.dict);
+
+
+    if (dict.has('State')) {
+      this.data.state = dict.get('State');
+      this.data.stateModel = dict.get('StateModel');
+    }
+
   }
+
 }
 
 class LinkAnnotation extends Annotation {
@@ -942,6 +1102,7 @@ class PopupAnnotation extends Annotation {
     this.data.parentId = dict.getRaw('Parent').toString();
     this.data.title = stringToPDFString(parentItem.get('T') || '');
     this.data.contents = stringToPDFString(parentItem.get('Contents') || '');
+    this.data.open = dict.get('Open') || false;
 
     if (!parentItem.has('C')) {
       // Fall back to the default background color.
@@ -963,7 +1124,7 @@ class PopupAnnotation extends Annotation {
   }
 }
 
-class LineAnnotation extends Annotation {
+class LineAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
@@ -971,29 +1132,26 @@ class LineAnnotation extends Annotation {
 
     let dict = parameters.dict;
     this.data.lineCoordinates = Util.normalizeRect(dict.getArray('L'));
-    this._preparePopup(dict);
   }
 }
 
-class SquareAnnotation extends Annotation {
+class SquareAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.SQUARE;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class CircleAnnotation extends Annotation {
+class CircleAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.CIRCLE;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class PolylineAnnotation extends Annotation {
+class PolylineAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
@@ -1012,12 +1170,10 @@ class PolylineAnnotation extends Annotation {
         y: rawVertices[i + 1],
       });
     }
-
-    this._preparePopup(dict);
   }
 }
 
-class PolygonAnnotation extends PolylineAnnotation {
+class PolygonAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     // Polygons are specific forms of polylines, so reuse their logic.
     super(parameters);
@@ -1026,7 +1182,7 @@ class PolygonAnnotation extends PolylineAnnotation {
   }
 }
 
-class InkAnnotation extends Annotation {
+class InkAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
@@ -1050,56 +1206,122 @@ class InkAnnotation extends Annotation {
         });
       }
     }
-    this._preparePopup(dict);
   }
 }
 
-class HighlightAnnotation extends Annotation {
+class HighlightAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.HIGHLIGHT;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class UnderlineAnnotation extends Annotation {
+class UnderlineAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.UNDERLINE;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class SquigglyAnnotation extends Annotation {
+class SquigglyAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.SQUIGGLY;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class StrikeOutAnnotation extends Annotation {
+class StrikeOutAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.STRIKEOUT;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class StampAnnotation extends Annotation {
+class CaretAnnotation extends MarkupAnnotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.CARET;
+  }
+}
+
+class StampAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
     this.data.annotationType = AnnotationType.STAMP;
-    this._preparePopup(parameters.dict);
   }
 }
 
-class FileAttachmentAnnotation extends Annotation {
+class SoundAnnotation extends MarkupAnnotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.SOUND;
+  }
+}
+
+class MovieAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.MOVIE;
+  }
+}
+
+class ScreenAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.SCREEN;
+  }
+}
+
+class PrinterMarkAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.PRINTERMARK;
+  }
+}
+
+class TrapNetAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.TRAPNET;
+  }
+}
+
+class WatermarkAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.WATERMARK;
+  }
+}
+
+class ThreeDAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.THREED;
+  }
+}
+
+class RedactAnnotation extends Annotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.REDACT;
+  }
+}
+
+class FileAttachmentAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
 
@@ -1107,7 +1329,6 @@ class FileAttachmentAnnotation extends Annotation {
 
     this.data.annotationType = AnnotationType.FILEATTACHMENT;
     this.data.file = file.serializable;
-    this._preparePopup(parameters.dict);
   }
 }
 
@@ -1115,4 +1336,5 @@ export {
   Annotation,
   AnnotationBorderStyle,
   AnnotationFactory,
+  pdfDateStringToISOString
 };

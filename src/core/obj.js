@@ -15,15 +15,17 @@
 
 import {
   bytesToString, createPromiseCapability, createValidAbsoluteUrl, FormatError,
-  info, InvalidPDFException, isBool, isNum, isString, MissingDataException,
-  PermissionFlag, shadow, stringToPDFString, stringToUTF8String,
-  toRomanNumerals, unreachable, warn, XRefEntryException, XRefParseException
+  info, InvalidPDFException, isBool, isNum, isString, PermissionFlag, shadow,
+  stringToPDFString, stringToUTF8String, unreachable, warn
 } from '../shared/util';
 import {
   Dict, isCmd, isDict, isName, isRef, isRefsEqual, isStream, Ref, RefSet,
   RefSetCache
 } from './primitives';
 import { Lexer, Parser } from './parser';
+import {
+  MissingDataException, toRomanNumerals, XRefEntryException, XRefParseException
+} from './core_utils';
 import { ChunkedStream } from './chunked_stream';
 import { CipherTransformFactory } from './crypto';
 import { ColorSpace } from './colorspace';
@@ -488,6 +490,22 @@ class Catalog {
     }
 
     return shadow(this, 'javaScript', javaScript);
+  }
+
+  fontFallback(id, handler) {
+    const promises = [];
+    this.fontCache.forEach(function(promise) {
+      promises.push(promise);
+    });
+
+    return Promise.all(promises).then((translatedFonts) => {
+      for (const translatedFont of translatedFonts) {
+        if (translatedFont.loadedName === id) {
+          translatedFont.fallback(handler);
+          return;
+        }
+      }
+    });
   }
 
   cleanup() {
@@ -1237,10 +1255,11 @@ var XRef = (function XRefClosure() {
           trailers.push(position);
           position += skipUntil(buffer, position, startxrefBytes);
         } else if ((m = objRegExp.exec(token))) {
-          if (typeof this.entries[m[1]] === 'undefined') {
-            this.entries[m[1]] = {
+          const num = m[1] | 0, gen = m[2] | 0;
+          if (typeof this.entries[num] === 'undefined') {
+            this.entries[num] = {
               offset: position - stream.start,
-              gen: m[2] | 0,
+              gen,
               uncompressed: true,
             };
           }

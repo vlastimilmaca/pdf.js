@@ -17,12 +17,13 @@ import {
   arrayByteLength, arraysToBytes, assert, createPromiseCapability, info,
   InvalidPDFException, MissingPDFException, PasswordException,
   setVerbosityLevel, UnexpectedResponseException, UnknownErrorException,
-  UNSUPPORTED_FEATURES, warn, XRefParseException
+  UNSUPPORTED_FEATURES, warn
 } from '../shared/util';
 import { LocalPdfManager, NetworkPdfManager } from './pdf_manager';
 import isNodeJS from '../shared/is_node';
 import { MessageHandler } from '../shared/message_handler';
 import { Ref } from './primitives';
+import { XRefParseException } from './core_utils';
 
 var WorkerTask = (function WorkerTaskClosure() {
   function WorkerTask(name) {
@@ -665,6 +666,10 @@ var WorkerMessageHandler = {
           throw reason;
         });
       });
+    });
+
+    handler.on('FontFallback', function(data) {
+      return pdfManager.fontFallback(data.id, handler);
     });
 
     handler.on('Cleanup', function wphCleanup(data) {

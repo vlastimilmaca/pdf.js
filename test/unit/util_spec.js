@@ -288,8 +288,6 @@ describe('util', function() {
     });
   });
 
-  
-
   describe('removeNullCharacters', function() {
     it('should not modify string without null characters', function() {
       let str = 'string without null chars';

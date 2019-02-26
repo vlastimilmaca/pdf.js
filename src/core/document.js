@@ -15,12 +15,15 @@
 /* eslint no-var: error */
 
 import {
-  assert, FormatError, getInheritableProperty, info, isArrayBuffer, isBool,
-  isNum, isSpace, isString, MissingDataException, OPS, shadow, stringToBytes,
-  stringToPDFString, Util, warn, XRefEntryException, XRefParseException
+  assert, FormatError, info, isArrayBuffer, isBool, isNum, isSpace, isString,
+  OPS, shadow, stringToBytes, stringToPDFString, Util, warn
 } from '../shared/util';
 import { Catalog, ObjectLoader, XRef } from './obj';
 import { Dict, isDict, isName, isStream, Ref } from './primitives';
+import {
+  getInheritableProperty, MissingDataException, XRefEntryException,
+  XRefParseException
+} from './core_utils';
 import { NullStream, Stream, StreamsSequenceStream } from './stream';
 import { AnnotationFactory } from './annotation';
 import { calculateMD5 } from './crypto';
@@ -453,8 +456,7 @@ class PDFDocument {
       if (this.acroForm) {
         this.xfa = this.acroForm.get('XFA');
         const fields = this.acroForm.get('Fields');
-        if ((!fields || !Array.isArray(fields) || fields.length === 0) &&
-            !this.xfa) {
+        if ((!Array.isArray(fields) || fields.length === 0) && !this.xfa) {
           this.acroForm = null; // No fields and no XFA, so it's not a form.
         }
       }
@@ -464,6 +466,19 @@ class PDFDocument {
       }
       info('Cannot fetch AcroForm entry; assuming no AcroForms are present');
       this.acroForm = null;
+    }
+
+    // Check if a Collection dictionary is present in the document.
+    try {
+      const collection = this.catalog.catDict.get('Collection');
+      if (isDict(collection) && collection.getKeys().length > 0) {
+        this.collection = collection;
+      }
+    } catch (ex) {
+      if (ex instanceof MissingDataException) {
+        throw ex;
+      }
+      info('Cannot fetch Collection dictionary.');
     }
   }
 
@@ -586,6 +601,7 @@ class PDFDocument {
       IsLinearized: !!this.linearization,
       IsAcroFormPresent: !!this.acroForm,
       IsXFAPresent: !!this.xfa,
+      IsCollectionPresent: !!this.collection,
     };
 
     let infoDict;
@@ -716,6 +732,10 @@ class PDFDocument {
         throw new XRefParseException();
       }
     });
+  }
+
+  fontFallback(id, handler) {
+    return this.catalog.fontFallback(id, handler);
   }
 
   cleanup() {

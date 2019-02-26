@@ -25,7 +25,7 @@ import {
 import {
   DOMCanvasFactory, DOMCMapReaderFactory, DummyStatTimer, loadScript,
   PageViewport, RenderingCancelledException, StatTimer
-} from './dom_utils';
+} from './display_utils';
 import { FontFaceObject, FontLoader } from './font_loader';
 import { apiCompatibilityParams } from './api_compatibility';
 import { CanvasGraphics } from './canvas';
@@ -90,7 +90,8 @@ if (typeof PDFJSDev !== 'undefined' && PDFJSDev.test('GENERIC')) {
     });
   }) : null;
 
-  if (!fallbackWorkerSrc && typeof document !== 'undefined') {
+  if (!fallbackWorkerSrc && typeof document === 'object' &&
+      'currentScript' in document) {
     const pdfjsFilePath = document.currentScript && document.currentScript.src;
     if (pdfjsFilePath) {
       fallbackWorkerSrc =
@@ -1685,7 +1686,10 @@ class WorkerTransport {
     this.messageHandler = messageHandler;
     this.loadingTask = loadingTask;
     this.commonObjs = new PDFObjects();
-    this.fontLoader = new FontLoader(loadingTask.docId);
+    this.fontLoader = new FontLoader({
+      docId: loadingTask.docId,
+      onUnsupportedFeature: this._onUnsupportedFeature.bind(this),
+    });
     this._params = params;
     this.CMapReaderFactory = new params.CMapReaderFactory({
       baseUrl: params.cMapUrl,
@@ -1953,11 +1957,16 @@ class WorkerTransport {
             onUnsupportedFeature: this._onUnsupportedFeature.bind(this),
             fontRegistry,
           });
-          const fontReady = (fontObjs) => {
-            this.commonObjs.resolve(id, font);
-          };
 
-          this.fontLoader.bind([font], fontReady);
+          this.fontLoader.bind(font).then(() => {
+            this.commonObjs.resolve(id, font);
+          }, (reason) => {
+            messageHandler.sendWithPromise('FontFallback', {
+              id,
+            }).finally(() => {
+              this.commonObjs.resolve(id, font);
+            });
+          });
           break;
         case 'FontPath':
           this.commonObjs.resolve(id, exportedData);
@@ -2451,7 +2460,7 @@ const InternalRenderTask = (function InternalRenderTaskClosure() {
       }
     }
 
-    cancel() {
+    cancel(error = null) {
       this.running = false;
       this.cancelled = true;
       if (this.gfx) {
@@ -2460,8 +2469,8 @@ const InternalRenderTask = (function InternalRenderTaskClosure() {
       if (this._canvas) {
         canvasInRendering.delete(this._canvas);
       }
-      this.callback(new RenderingCancelledException(
-        'Rendering cancelled, page ' + this.pageNumber, 'canvas'));
+      this.callback(error || new RenderingCancelledException(
+        `Rendering cancelled, page ${this.pageNumber}`, 'canvas'));
     }
 
     operatorListChanged() {
@@ -2497,10 +2506,10 @@ const InternalRenderTask = (function InternalRenderTaskClosure() {
     _scheduleNext() {
       if (this._useRequestAnimationFrame) {
         window.requestAnimationFrame(() => {
-          this._nextBound().catch(this.callback);
+          this._nextBound().catch(this.cancel.bind(this));
         });
       } else {
-        Promise.resolve().then(this._nextBound).catch(this.callback);
+        Promise.resolve().then(this._nextBound).catch(this.cancel.bind(this));
       }
     }
 

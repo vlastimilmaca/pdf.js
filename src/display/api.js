@@ -995,6 +995,16 @@ class PDFPageProxy {
   }
 
   /**
+   * @param {GetAnnotationsParameters} params - Annotation parameters.
+   * @return {Promise} A promise that is resolved with an {Array} of the
+   * overriden annotation objects.
+   */
+  overrideAnnotations(overrides = {}) {
+    return this._transport.overrideAnnotations(this.pageIndex,
+      overrides);
+  }
+
+  /**
    * Begins the process of rendering a page to the desired context.
    * @param {RenderParameters} params Page render parameters.
    * @returns {RenderTask} An object that contains the promise, which
@@ -2481,6 +2491,13 @@ class WorkerTransport {
     return this.messageHandler.sendWithPromise("GetAnnotations", {
       pageIndex,
       intent,
+    });
+  }
+
+  overrideAnnotations(pageIndex, overrides) {
+    return this.messageHandler.sendWithPromise('OverrideAnnotations', {
+      pageIndex,
+      overrides,
     });
   }
 

@@ -482,6 +482,13 @@ var WorkerMessageHandler = {
       });
     });
 
+    handler.on('OverrideAnnotations',
+      function ({ pageIndex, overrides, }) {
+        return pdfManager.getPage(pageIndex).then(function (page) {
+          return page.overrideAnnotations(overrides);
+        });
+    });
+
     handler.on(
       "GetOperatorList",
       function wphSetupRenderPage(data, sink) {

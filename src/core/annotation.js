@@ -57,6 +57,32 @@ class AnnotationFactory {
     ]);
   }
 
+  static createReply(data, pdfManager) {
+    return pdfManager.ensure(this, '_createReply',
+      [data]);
+  }
+
+  static _createReply(data) {
+
+    data.replyType = AnnotationReplyType.REPLY;
+
+    let hasCreationDate = !!data.creationDate;
+    let hasModifiedDate = !!data.modifiedDate;
+    if (!hasCreationDate && !hasModifiedDate) {
+      data.modifiedDate = data.creationDate = new Date();
+    } else {
+      if (hasCreationDate && !hasModifiedDate) {
+        data.modifiedDate = new Date();
+      } else if (!hasCreationDate) {
+        data.creationDate = data.modifiedDate;
+      }
+    }
+
+    data.hasAppearance = false;
+
+    return new TextAnnotation({ data, });
+  }
+
   /**
    * @private
    */
@@ -304,7 +330,7 @@ function pdfDateStringToISOString(str) {
 class Annotation {
   constructor(params) {
     const dict = params.dict;
-
+  if (dict) {
     this.setContents(dict.get("Contents"));
     this.setModificationDate(dict.get("M"));
     this.setFlags(dict.get("F"));
@@ -313,9 +339,6 @@ class Annotation {
     this.setBorderStyle(dict);
     this.setAppearance(dict);
 
-    if (dict.has('M')) {
-      this.setModifiedDate(dict.get('M'));
-    }
 
     // Expose public properties using a data object.
     this.data = {
@@ -330,11 +353,19 @@ class Annotation {
       subtype: params.subtype,
     };
 
-    if (dict.has('Contents')) { 
       this.data.contents = stringToPDFString(dict.get('Contents') || '');
+
+
+    } else if (params.data) {
+      let data = params.data;
+      this.data = params.data;
+      this.appearance = data.appearance;
+      this.color = data.color;
+      this.rectangle = data.rect;
+      this.borderStyle = data.borderStyle;
+      this.setFlags(data.flags);
+      this.modifiedDate = data.modifiedDate;
     }
-
-
   }
 
   /**
@@ -347,12 +378,10 @@ class Annotation {
   /**
    * @private
    */
-  _isViewable(flags) {
-    return (
-      !this._hasFlag(flags, AnnotationFlag.INVISIBLE) &&
-      !this._hasFlag(flags, AnnotationFlag.HIDDEN) &&
-      !this._hasFlag(flags, AnnotationFlag.NOVIEW)
-    );
+  _isRenderable(flags) {
+    return !this._hasFlag(flags, AnnotationFlag.INVISIBLE) &&
+           !this._hasFlag(flags, AnnotationFlag.HIDDEN) &&
+           !this._hasFlag(flags, AnnotationFlag.NOVIEW);
   }
 
   /**
@@ -373,7 +402,14 @@ class Annotation {
     if (this.flags === 0) {
       return true;
     }
-    return this._isViewable(this.flags);
+    return this._isRenderable(this.flags);
+  }
+
+  get renderable() {
+    if (this.flags === 0) {
+      return true;
+    }
+    return this._isRenderable(this.flags);
   }
 
   /**
@@ -548,6 +584,25 @@ class Annotation {
     }
   }
 
+  applyOverride(dataOverride) {
+    let keys = Object.getOwnPropertyNames(dataOverride);
+
+    for (let i = 0, l = keys.length; i < l; i++) {
+      let key = keys[i];
+      let override = dataOverride[key];
+
+      this.data[key] = override;
+      switch (key) {
+        case 'annotationFlags': this.flags = override; break;
+        case 'color': this.color = override; break;
+        case 'rect': this.rectangle = override; break;
+        // case 'hasAppearance':
+        //  this.appearance = override ? null : this.appearance;
+        //  break;
+      }
+    }
+  }
+
   /**
    * Set the (normal) appearance.
    *
@@ -642,7 +697,9 @@ class MarkupAnnotation extends Annotation {
     super(parameters);
     let dict = parameters.dict;
 
-    
+    if (!dict) {
+      return;
+    }
 
     this.data.isMarkup = true;
 
@@ -688,8 +745,10 @@ class MarkupAnnotation extends Annotation {
         // Fall back to the default background color.
         this.data.color = null;
       }
+    }
 
-      this.setCreationDate(dict);
+    if (dict.has('Subj')) {
+      this.data.subject = stringToPDFString(dict.get('Subj'));
     }
 
     if (dict.has('RC')) {
@@ -1027,6 +1086,7 @@ class TextWidgetAnnotation extends WidgetAnnotation {
         return operatorList;
       });
   }
+
 }
 
 class ButtonWidgetAnnotation extends WidgetAnnotation {
@@ -1168,10 +1228,14 @@ class ChoiceWidgetAnnotation extends WidgetAnnotation {
 class TextAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     const DEFAULT_ICON_SIZE = 22; // px
-
     super(parameters);
-    let dict = parameters.dict;
     this.data.annotationType = AnnotationType.TEXT;
+
+    let dict = parameters.dict;
+
+    if (!dict) {
+      return;
+    }
 
     if (this.data.hasAppearance) {
       this.data.name = "NoIcon";
@@ -1188,6 +1252,20 @@ class TextAnnotation extends MarkupAnnotation {
       this.data.state = null;
       this.data.stateModel = null;
     }
+  }
+
+  get viewable() {
+    if (this.data.state) {
+      return true;
+    }
+    return super.viewable;
+  }
+
+  get renderable() {
+    if (this.data.inReplyTo) {
+      return false;
+    }
+    return super.renderable;
   }
 
 }
@@ -1254,8 +1332,8 @@ class PopupAnnotation extends Annotation {
     // that is most likely a bug. Fallback to inherit the flags from the parent
     // annotation (this is consistent with the behaviour in Adobe Reader).
     if (!this.viewable) {
-      const parentFlags = parentItem.get("F");
-      if (this._isViewable(parentFlags)) {
+      let parentFlags = parentItem.get('F');
+      if (this._isRenderable(parentFlags)) {
         this.setFlags(parentFlags);
       }
     }
@@ -1298,6 +1376,14 @@ class CircleAnnotation extends MarkupAnnotation {
     super(parameters);
 
     this.data.annotationType = AnnotationType.CIRCLE;
+  }
+}
+
+class FreeTextAnnotation extends MarkupAnnotation {
+  constructor(parameters) {
+    super(parameters);
+
+    this.data.annotationType = AnnotationType.FREETEXT;
   }
 }
 

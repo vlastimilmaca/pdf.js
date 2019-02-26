@@ -33,8 +33,13 @@ const DEFAULT_USER_UNIT = 1.0;
 const LETTER_SIZE_MEDIABOX = [0, 0, 612, 792];
 
 function isAnnotationRenderable(annotation, intent) {
-  return (intent === 'display' && annotation.viewable) ||
+  return (intent === 'display' && annotation.renderable) ||
          (intent === 'print' && annotation.printable);
+}
+
+function isAnnotationViewable(annotation, intent) {
+  return (intent === 'display' && annotation.viewable) ||
+    (intent === 'print' && annotation.printable);
 }
 
 class Page {
@@ -238,7 +243,7 @@ class Page {
       for (const annotation of annotations) {
         if (isAnnotationRenderable(annotation, intent)) {
           opListPromises.push(annotation.getOperatorList(
-            partialEvaluator, task, renderInteractiveForms));
+          partialEvaluator, task, renderInteractiveForms));
         }
       }
 
@@ -293,7 +298,7 @@ class Page {
     return this._parsedAnnotations.then(function(annotations) {
       const annotationsData = [];
       for (let i = 0, ii = annotations.length; i < ii; i++) {
-        if (!intent || isAnnotationRenderable(annotations[i], intent)) {
+        if (!intent || isAnnotationViewable(annotations[i], intent)) {
           annotationsData.push(annotations[i].data);
         }
       }
@@ -304,6 +309,53 @@ class Page {
   get annotations() {
     return shadow(this, 'annotations',
                   this._getInheritableProperty('Annots') || []);
+  }
+
+  overrideAnnotations(overrides) {
+    return this._parsedAnnotations.then((annots) => {
+      let handledOverrides = [];
+      for (let i = annots.length - 1,
+        ii = annots.length; i >= 0 && i < ii; i--) {
+        let annot = annots[i];
+        let override = overrides[annot.data.id];
+
+        handledOverrides.push(annot.data.id);
+
+        if (override && override !== null) { // apply override
+          annot.applyOverride(override);
+        } else if (override === null) { // remove when override is null
+          annots.splice(i, 1);
+        }
+
+      }
+      // add new annots - for now just replys - without appearences
+      let newAnnots = Object.getOwnPropertyNames(overrides).filter(
+        (name) => {
+
+          return overrides[name] !== null &&
+            !handledOverrides.find((it) => {
+              return it === name;
+            });
+        });
+
+      const newAnnotationPromises = [];
+
+      for (let i = 0, ii = newAnnots.length; i < ii; i++) {
+        newAnnotationPromises.push(AnnotationFactory.createReply(newAnnots));
+      }
+
+      return Promise.all(newAnnotationPromises).then(function (annotations) {
+        annots.push.apply(annots, annotations.filter(function (annotation) {
+          return !!annotation;
+        }));
+        return annots.map(function (it) {
+          return it.data;
+        });
+      }, function (reason) {
+        warn(`overrideAnnotations: "${reason}".`);
+        return [];
+      });
+    });
   }
 
   get _parsedAnnotations() {

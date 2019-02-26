@@ -107,6 +107,9 @@ class AnnotationElementFactory {
       case AnnotationType.FILEATTACHMENT:
         return new FileAttachmentAnnotationElement(parameters);
 
+      case AnnotationType.CARET:
+        return new CaretAnnotationElement(parameters);
+
       default:
         return new AnnotationElement(parameters);
     }
@@ -125,10 +128,54 @@ class AnnotationElement {
     this.imageResourcesPath = parameters.imageResourcesPath;
     this.renderInteractiveForms = parameters.renderInteractiveForms;
     this.svgFactory = parameters.svgFactory;
-
+    this.modificators = parameters.modificators;
     if (isRenderable) {
       this.container = this._createContainer(ignoreBorder);
+      this._processModificators();
     }
+  }
+
+  _processModificators() {
+    let replys = [], states = [], groups = [];
+    let authors = [], authorsLast = {};
+    if (this.modificators) {
+      for (let i = 0, l = this.modificators.length; i < l; i++) {
+        let modification = this.modificators[i],
+          author = modification.title;
+
+        if (modification.state) {
+          if (modification.stateModel === 'Review') {
+            let last = authorsLast[author];
+
+            if (last) {
+              if (last.creationDate < modification.creationDate) {
+                authorsLast[author] = modification;
+              }
+            } else {
+              authorsLast[author] = modification;
+              authors.push(author);
+            }
+            states.push(modification);
+          }
+        } else if (modification.replyType === 'R') {
+          replys.push(modification);
+        } else {
+          groups.push(modification);
+        }
+      }
+    }
+
+    // select active states from list of all states
+    let activeStates = [];
+    for (let i = 0, l = authors.length; i < l; i++) {
+      let state = authorsLast[authors[i]];
+      activeStates.push(state);
+    }
+
+    this.replys = replys;
+    this.states = states;
+    this.activeStates = activeStates;
+    this.groups = groups;
   }
 
   /**
@@ -220,6 +267,27 @@ class AnnotationElement {
     return container;
   }
 
+  /* When annotation has group replies associated,
+   * this will get their elements for displaying
+   * popup of master annotation.
+   * //TODO: elements might not yet exist ...
+   */
+  _getGroupElements() {
+    let groupElements = [];
+    if (this.groups.length > 0) {
+      for (let i = 0, l = this.groups.length; i < l; i++) {
+        let group = this.groups[i];
+        let selector = '[data-annotation-id="' + group.id + '"]';
+        let groupElement = this.layer.querySelector(selector);
+        if (groupElement) {
+          groupElements.push(groupElement);
+        }
+      }
+    }
+
+    return groupElements;
+  }
+
   /**
    * Create a popup for the annotation's HTML element. This is used for
    * annotations that do not have a Popup entry in the dictionary, but
@@ -232,6 +300,11 @@ class AnnotationElement {
    * @memberof AnnotationElement
    */
   _createPopup(container, trigger, data) {
+    // if it doesn't have content and title, do not render it
+    if (!(data.title && data.contents)) {
+      return;
+    }
+
     // If no trigger element is specified, create it.
     if (!trigger) {
       trigger = document.createElement('div');
@@ -240,13 +313,18 @@ class AnnotationElement {
       container.appendChild(trigger);
     }
 
+    let triggers = this._getGroupElements();
+    triggers.push(trigger);
+
     let popupElement = new PopupElement({
       container,
-      trigger,
+      trigger: triggers,
       color: data.color,
       title: data.title,
       contents: data.contents,
       hideWrapper: true,
+      replys: this.replys,
+      states: this.activeStates,
     });
     let popup = popupElement.render();
 
@@ -348,7 +426,8 @@ class LinkAnnotationElement extends AnnotationElement {
 class TextAnnotationElement extends AnnotationElement {
   constructor(parameters) {
     let isRenderable = !!(parameters.data.hasPopup ||
-                          parameters.data.title || parameters.data.contents);
+      parameters.data.title ||
+      parameters.data.contents) && !(parameters.data.inReplyTo);
     super(parameters, isRenderable);
   }
 
@@ -615,10 +694,35 @@ class ChoiceWidgetAnnotationElement extends WidgetAnnotationElement {
     return this.container;
   }
 }
+const POPUP_IGNORE_TYPES = [
+  'Line',
+  'Square',
+  'Circle',
+  'PolyLine',
+  'Polygon',
+  'Ink',
+];
 
 class PopupAnnotationElement extends AnnotationElement {
   constructor(parameters) {
-    let isRenderable = !!(parameters.data.title || parameters.data.contents);
+    // Do not render popup annotations for parent elements with these types as
+    // they create the popups themselves (because of custom trigger divs).
+
+    let isRenderable = !!(parameters.data.title && parameters.data.contents &&
+      !POPUP_IGNORE_TYPES.includes(parameters.data.parentType));
+
+    if (parameters.modificators) {
+      for (let i = 0, l = parameters.modificators.length; i < l; i++) {
+        let modification = parameters.modificators[i];
+
+        // parentId is modificator or reply
+        // - do not render popup for that either
+        if (parameters.data.parentId === modification.id) {
+          isRenderable = false; break;
+        }
+      }
+    }
+
     super(parameters, isRenderable);
   }
 
@@ -653,20 +757,27 @@ class PopupAnnotationElement extends AnnotationElement {
       return this.container;
     }
 
+    let triggers = this._getGroupElements();
+    triggers.push(parentElement);
+
+    let parentElementStyle = parentElement.style;
+
     let popup = new PopupElement({
       container: this.container,
-      trigger: parentElement,
+      trigger: triggers,
       color: this.data.color,
       title: this.data.title,
       contents: this.data.contents,
+      replys: this.replys,
+      states: this.activeStates,
     });
 
     // Position the popup next to the parent annotation's container.
     // PDF viewers ignore a popup annotation's rectangle.
-    let parentLeft = parseFloat(parentElement.style.left);
-    let parentWidth = parseFloat(parentElement.style.width);
+    let parentLeft = parseFloat(parentElementStyle.left);
+    let parentWidth = parseFloat(parentElementStyle.width);
     this.container.style.transformOrigin =
-      -(parentLeft + parentWidth) + 'px -' + parentElement.style.top;
+      -(parentLeft + parentWidth) + 'px -' + parentElementStyle.top;
     this.container.style.left = (parentLeft + parentWidth) + 'px';
 
     this.container.appendChild(popup.render());
@@ -682,6 +793,8 @@ class PopupElement {
     this.title = parameters.title;
     this.contents = parameters.contents;
     this.hideWrapper = parameters.hideWrapper || false;
+    this.replys = parameters.replys;
+    this.states = parameters.states;
 
     this.pinned = false;
   }
@@ -720,18 +833,74 @@ class PopupElement {
 
     let contents = this._formatContents(this.contents);
     let title = document.createElement('h1');
+    this.statusElement = this._createStatusElement();
+
     title.textContent = this.title;
 
-    // Attach the event listeners to the trigger element.
-    this.trigger.addEventListener('click', this._toggle.bind(this));
-    this.trigger.addEventListener('mouseover', this._show.bind(this, false));
-    this.trigger.addEventListener('mouseout', this._hide.bind(this, false));
+    let triggers = [];
+    if (!Array.isArray(this.trigger)) {
+      triggers.push(this.trigger);
+    } else {
+      triggers = this.trigger;
+    }
+
+    for (let i = 0, l = triggers.length; i < l; i++) {
+      let trigger = triggers[i];
+      // Attach the event listeners to the trigger element.
+      trigger.addEventListener('click', this._toggle.bind(this));
+      trigger.addEventListener('mouseover', this._show.bind(this, false));
+      trigger.addEventListener('mouseout', this._hide.bind(this, false));
+    }
+
     popup.addEventListener('click', this._hide.bind(this, true));
 
     popup.appendChild(title);
+
+    if (this.statusElement !== null) {
+      popup.appendChild(this.statusElement);
+    }
+
     popup.appendChild(contents);
     wrapper.appendChild(popup);
     return wrapper;
+  }
+
+  _createStatusElement() {
+    let hasReplys = this.replys.length > 0;
+    let hasStates = this.states.length > 0;
+
+    if (hasReplys || hasStates) {
+      let status = document.createElement('div');
+      status.appendChild(document.createTextNode('( '));
+
+      if (hasReplys) {
+        let replys = document.createElement('span');
+        replys.setAttribute('data-l10n-id', 'annotation_replys_count');
+        replys.setAttribute('data-l10n-args',
+          '{"count":"' + this.replys.length + '"}');
+        replys.textContent = 'replys: ' + this.replys.length;
+        status.appendChild(replys);
+      }
+
+      if (hasReplys && hasStates) {
+        status.appendChild(document.createTextNode(', '));
+      }
+
+      if (hasStates) {
+        let states = document.createElement('span');
+        states.setAttribute('data-l10n-id', 'annotation_states_count');
+        states.setAttribute('data-l10n-args',
+          '{"count":"' + this.states.length + '"}');
+        states.textContent = 'states: ' + this.states.length;
+
+        status.appendChild(states);
+      }
+
+      status.appendChild(document.createTextNode(' )'));
+
+      return status;
+    }
+    return null;
   }
 
   /**
@@ -802,6 +971,7 @@ class PopupElement {
       this.container.style.zIndex -= 1;
     }
   }
+
 }
 
 class LineAnnotationElement extends AnnotationElement {
@@ -1180,6 +1350,30 @@ class StrikeOutAnnotationElement extends AnnotationElement {
   }
 }
 
+class CaretAnnotationElement extends AnnotationElement {
+  constructor(parameters) {
+    let isRenderable = !!(parameters.data.hasPopup ||
+      parameters.data.title || parameters.data.contents);
+    super(parameters, isRenderable, /* ignoreBorder = */ true);
+  }
+
+  /**
+   * Render the caret annotation's HTML element in the empty container.
+   *
+   * @public
+   * @memberof CaretAnnotationElement
+   * @returns {HTMLSectionElement}
+   */
+  render() {
+    this.container.className = 'caretAnnotation';
+
+    if (!this.data.hasPopup) {
+      this._createPopup(this.container, null, this.data);
+    }
+    return this.container;
+  }
+}
+
 class StampAnnotationElement extends AnnotationElement {
   constructor(parameters) {
     let isRenderable = !!(parameters.data.hasPopup ||
@@ -1282,7 +1476,45 @@ class AnnotationLayer {
    * @param {AnnotationLayerParameters} parameters
    * @memberof AnnotationLayer
    */
+
+  static _mapModificators(modificators) {
+    let map = {}, node, list = {}, i, parentId;
+
+    for (i = 0; i < modificators.length; i += 1) {
+      node = modificators[i];
+
+      if (!map[node.inReplyTo]) {
+        map[node.inReplyTo] = null; // parents
+        list[node.inReplyTo] = [];
+      }
+
+      list[node.id] = [node];
+      map[node.id] = node.inReplyTo; // modificators
+    }
+
+    for (i = 0; i < modificators.length; i += 1) {
+      node = modificators[i];
+      parentId = node.inReplyTo;
+
+      while (map[parentId] !== null) { // find root parent
+        list[parentId].push(node);
+        parentId = map[parentId];
+      }
+
+      list[parentId].push(node);
+    }
+
+    return list;
+  }
+
   static render(parameters) {
+
+    let modificators =
+      this._mapModificators(parameters.annotations.filter(
+        (annot) => {
+          return annot.inReplyTo;
+        }));
+
     for (let i = 0, ii = parameters.annotations.length; i < ii; i++) {
       let data = parameters.annotations[i];
       if (!data) {
@@ -1298,7 +1530,12 @@ class AnnotationLayer {
         imageResourcesPath: parameters.imageResourcesPath || '',
         renderInteractiveForms: parameters.renderInteractiveForms || false,
         svgFactory: new DOMSVGFactory(),
+        modificators: (data.parentId &&
+          modificators[data.parentId] ?
+          modificators[data.parentId].concat(modificators[data.id] || []) :
+          modificators[data.id]) || [],
       });
+
       if (element.isRenderable) {
         parameters.div.appendChild(element.render());
       }

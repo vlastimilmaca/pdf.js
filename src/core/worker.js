@@ -571,6 +571,13 @@ var WorkerMessageHandler = {
       });
     });
 
+    handler.on('OverrideAnnotations',
+      function ({ pageIndex, overrides, }) {
+        return pdfManager.getPage(pageIndex).then(function (page) {
+          return page.overrideAnnotations(overrides);
+        });
+    });
+
     handler.on('RenderPageRequest', function wphSetupRenderPage(data) {
       var pageIndex = data.pageIndex;
       pdfManager.getPage(pageIndex).then(function(page) {

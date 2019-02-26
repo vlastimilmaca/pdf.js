@@ -157,6 +157,8 @@
   position: absolute;
   z-index: 200;
   max-width: 20em;
+  max-height: 20em;
+  overflow: auto;
   background-color: #FFFF99;
   box-shadow: 0px 2px 5px #333;
   border-radius: 2px;
@@ -172,6 +174,10 @@
   border-bottom: 1px solid #000000;
   margin: 0;
   padding-bottom: 0.2em;
+}
+
+.annotationLayer .popup h1+div{
+  font-size: 0.75em;
 }
 
 .annotationLayer .popup p {

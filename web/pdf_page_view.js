@@ -369,7 +369,7 @@ class PDFPageView {
     return this.viewport.convertToPdfPoint(x, y);
   }
 
-  draw() {
+  draw(annotationOverrides) {
     if (this.renderingState !== RenderingStates.INITIAL) {
       console.error('Must be in new state before drawing');
       this.reset(); // Ensure that we reset all state to prevent issues.
@@ -472,7 +472,7 @@ class PDFPageView {
 
     let paintTask = this.renderer === RendererType.SVG ?
       this.paintOnSvg(canvasWrapper) :
-      this.paintOnCanvas(canvasWrapper);
+      this.paintOnCanvas(canvasWrapper, annotationOverrides);
     paintTask.onRenderContinue = renderContinueCallback;
     this.paintTask = paintTask;
 
@@ -506,7 +506,7 @@ class PDFPageView {
     return resultPromise;
   }
 
-  paintOnCanvas(canvasWrapper) {
+  paintOnCanvas(canvasWrapper, annotationOverrides) {
     let renderCapability = createPromiseCapability();
     let result = {
       promise: renderCapability.promise,
@@ -585,6 +585,7 @@ class PDFPageView {
       viewport: this.viewport,
       enableWebGL: this.enableWebGL,
       renderInteractiveForms: this.renderInteractiveForms,
+      annotationOverrides,
     };
     let renderTask = this.pdfPage.render(renderContext);
     renderTask.onContinue = function (cont) {

@@ -149,9 +149,6 @@ class AnnotationFactory {
       case "Stamp":
         return new StampAnnotation(parameters);
 
-      case 'Caret':
-        return new CaretAnnotation(parameters);
-
       case 'Sound':
         return new SoundAnnotation(parameters);
 
@@ -259,7 +256,11 @@ const pdfDateStringRegexp = new RegExp(
 
 const pdfDateStringMatchParse = function (match, year, month,
   day, hour, minute, second, tz, tzHour, tzMinute) {
-  if (match === '') return;
+
+  if (match === '') {
+    return;
+  }
+
   let result = year + (month ? '-' + month : '') +
     (day ? '-' + day : '');
 
@@ -277,7 +278,7 @@ const pdfDateStringMatchParse = function (match, year, month,
 /**
  * Converts pdf date string to ISO8061 string.
  * @param {any} str
- * @return {undefined} When pdf date string doesn't meet spec of pdf date string.
+ * @return {undefined} When pdf date string doesn't meet spec of pdf date string
  * @throws {Error} When non-string or non-pdf-date-string is on input
  * (Has to start with 'D:' and have at least length of 6 chars).
  */
@@ -333,9 +334,6 @@ class Annotation {
       this.data.contents = stringToPDFString(dict.get('Contents') || '');
     }
 
-    if (this.modifiedDate) {
-      this.data.modifiedDate = this.modifiedDate;
-    }
 
   }
 
@@ -644,21 +642,9 @@ class MarkupAnnotation extends Annotation {
     super(parameters);
     let dict = parameters.dict;
 
-    if (!dict.has('C')) {
-      // Fall back to the default background color.
-      this.data.color = null;
-    }
+    
 
-    this.data.hasPopup = dict.has('Popup');
-    this.data.title = stringToPDFString(dict.get('T') || '');
-
-  
-    if (dict.has('CreationDate')) {
-      let creationDateString = pdfDateStringToISOString(dict.get('CreationDate'));
-
-      if (creationDateString)
-        this.data.creationDate = new Date(creationDateString);
-    }
+    this.data.isMarkup = true;
 
     if (dict.has('IT')) {
       this.data.intent = dict.get('IT').name;
@@ -667,20 +653,51 @@ class MarkupAnnotation extends Annotation {
     if (dict.has('IRT')) {
       this.data.inReplyTo = dict.getRaw('IRT').toString();
       this.data.replyType = dict.has('RT') ? dict.get('RT').name : 'R';
-      // when this is reply to something,
-      // it shall not be rendered in pdf page on it's own.
-      //this.setAppearance(new Dict()); 
     }
 
-    if (dict.has('Subj')) {
-      this.data.subject = stringToPDFString(dict.get('Subj'));
+    if (this.data.replyType === AnnotationReplyType.GROUP) {
+      let parent = dict.get('IRT');
+
+      this.data.title = stringToPDFString(parent.get('T') || '');
+      this.data.subject = stringToPDFString(parent.get('Subj') || '');
+      this.data.contents = stringToPDFString(parent.get('Contents') || '');
+      this.setCreationDate(parent);
+
+      if (parent.has('M')) {
+        this.setModifiedDate(parent.get('M'));
+      }
+
+      // parent's popup should be used
+      this.data.hasPopup = parent.has('Popup');
+
+      if (!parent.has('C')) {
+        // Fall back to the default background color.
+        this.data.color = null;
+      } else {
+        this.setColor(parent.getArray('C'));
+        this.data.color = this.color;
+      }
+
+    } else {
+      this.data.hasPopup = dict.has('Popup');
+
+      this.data.title = stringToPDFString(dict.get('T') || '');
+      this.data.subject = stringToPDFString(dict.get('Subj') || '');
+
+      if (!dict.has('C')) {
+        // Fall back to the default background color.
+        this.data.color = null;
+      }
+
+      this.setCreationDate(dict);
     }
 
     if (dict.has('RC')) {
       let richText = dict.get('RC');
       if (typeof richText === 'string') {
         this.data.richText = stringToPDFString(richText);
-      }/* else if (isStream(richText)) {
+      }/* TODO: how to parse string stream into string ?
+       * else if (isStream(richText)) {
           this.data.subject = bytesToString(richText.getBytes());
       } */
     }
@@ -1304,7 +1321,7 @@ class PolylineAnnotation extends MarkupAnnotation {
   }
 }
 
-class PolygonAnnotation extends MarkupAnnotation {
+class PolygonAnnotation extends PolylineAnnotation {
   constructor(parameters) {
     // Polygons are specific forms of polylines, so reuse their logic.
     super(parameters);

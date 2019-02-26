@@ -86,26 +86,26 @@ const AnnotationType = {
 };
 
 const AnnotationStateModelType = {
-  MARKED: "Marked",
-  REVIEW: "Review",
+  MARKED: 'Marked',
+  REVIEW: 'Review',
 };
 
 const AnnotationMarkedState = {
-  MARKED: "Marked",
-  UNMARKED: "Unmarked",
+  MARKED: 'Marked',
+  UNMARKED: 'Unmarked',
 };
 
 const AnnotationReviewState = {
-  ACCEPTED: "Accepted",
-  REJECTED: "Rejected",
-  CANCELLED: "Cancelled",
-  COMPLETED: "Completed",
-  NONE: "None",
+  ACCEPTED: 'Accepted',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
+  COMPLETED: 'Completed',
+  NONE: 'None',
 };
 
 const AnnotationReplyType = {
-  GROUP: "Group",
-  REPLY: "R",
+  GROUP: 'Group',
+  REPLY: 'R',
 };
 
 const AnnotationFlag = {

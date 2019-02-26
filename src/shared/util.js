@@ -88,12 +88,12 @@ const AnnotationType = {
 
 const AnnotationStateModelType = {
   MARKED: 'Marked',
-  REVIEW: 'Review'
-}
+  REVIEW: 'Review',
+};
 
 const AnnotationMarkedState = {
   MARKED: 'Marked',
-  UNMARKED: 'Unmarked'
+  UNMARKED: 'Unmarked',
 };
 
 const AnnotationReviewState = {
@@ -101,13 +101,13 @@ const AnnotationReviewState = {
   REJECTED: 'Rejected',
   CANCELLED: 'Cancelled',
   COMPLETED: 'Completed',
-  NONE: 'None'
+  NONE: 'None',
 };
 
 const AnnotationReplyType = {
   GROUP: 'Group',
-  REPLY: 'R'
-}
+  REPLY: 'R',
+};
 
 const AnnotationFlag = {
   INVISIBLE: 0x01,
@@ -1051,6 +1051,7 @@ export {
   AnnotationFieldFlag,
   AnnotationFlag,
   AnnotationMarkedState,
+  AnnotationReplyType,
   AnnotationReviewState,
   AnnotationStateModelType,
   AnnotationType,

@@ -275,7 +275,7 @@ describe('annotation', function() {
       annotDict.set('Contents', 'Content');
 
       const annotation = new Annotation({ dict: annotDict, ref, });
-      
+
       expect(annotation.data.contents).toEqual('Content');
     });
   });
@@ -283,7 +283,6 @@ describe('annotation', function() {
   describe('MarkupAnnotation', function () {
     it('should correctly parse a Popup, T and IT',
       function (done) {
-        const subjText = 'This is subject of this annotation';
 
         const annotationRef = new Ref(820, 0);
         const popupRef = new Ref(821, 0);
@@ -292,7 +291,6 @@ describe('annotation', function() {
         popupDict.set('Type', Name.get('Annot'));
         popupDict.set('Subtype', Name.get('Popup'));
         popupDict.set('Parent', annotationRef);
-
 
         const annotationDict = new Dict();
         annotationDict.set('Type', Name.get('Annot'));
@@ -307,7 +305,6 @@ describe('annotation', function() {
 
         AnnotationFactory.create(xref, annotationRef, pdfManagerMock,
           idFactoryMock).then(({ data, }) => {
-          
             expect(data.title).toEqual('Author Name');
             expect(data.intent).toEqual('Text');
 
@@ -376,7 +373,7 @@ describe('annotation', function() {
       AnnotationFactory.create(xref, annotationRef, pdfManagerMock,
         idFactoryMock).then(({ data, }) => {
           expect(data.creationDate).toBeUndefined();
-          expect(data.subject).toBeUndefined();
+          expect(data.subject).toEqual('');
 
           expect(data.inReplyTo).toEqual(replyRef.toString());
           expect(data.replyType).toEqual('R');
@@ -384,12 +381,13 @@ describe('annotation', function() {
          }, done.fail);
     });
 
-  it('should correctly parse IRT, RT and RC (as stream)',
+  it('should correctly parse IRT, RT and as Group take Contents from Master',
     function (done) {
 
       const replyDict = new Dict();
       replyDict.set('Type', Name.get('Annot'));
       replyDict.set('Subtype', Name.get('Text'));
+      replyDict.set('Contents', 'TestText');
       const replyRef = new Ref(819, 0);
       // const richTextStream = new StringStream(
       //  ''
@@ -398,11 +396,10 @@ describe('annotation', function() {
       const annotationDict = new Dict();
       annotationDict.set('Type', Name.get('Annot'));
       annotationDict.set('Subtype', Name.get('Text'));
-      annotationDict.set('IRT', replyRef);
+      annotationDict.set('IRT', replyDict);
       annotationDict.set('RT', Name.get('Group'));
     // annotationDict.set('RC', richTextStream);
       const annotationRef = new Ref(820, 0);
-
 
       const xref = new XRefMock([
         { ref: annotationRef, data: annotationDict, },
@@ -412,8 +409,10 @@ describe('annotation', function() {
       AnnotationFactory.create(xref, annotationRef, pdfManagerMock,
         idFactoryMock).then(({ data, }) => {
           expect(data.creationDate).toBeUndefined();
-          expect(data.inReplyTo).toEqual(replyRef.toString());
+          expect(data.inReplyTo).toBeDefined();
           expect(data.replyType).toEqual('Group');
+          expect(data.contents).toEqual('TestText');
+
           // expect(data.richText).toEqual();
           done();
         }, done.fail);

@@ -83,6 +83,32 @@ class AnnotationFactory {
     return new TextAnnotation({ data, });
   }
 
+  static createReply(data, pdfManager) {
+    return pdfManager.ensure(this, '_createReply',
+      [data]);
+  }
+
+  static _createReply(data) {
+
+    data.replyType = AnnotationReplyType.REPLY;
+
+    let hasCreationDate = !!data.creationDate;
+    let hasModifiedDate = !!data.modifiedDate;
+    if (!hasCreationDate && !hasModifiedDate) {
+      data.modifiedDate = data.creationDate = new Date();
+    } else {
+      if (hasCreationDate && !hasModifiedDate) {
+        data.modifiedDate = new Date();
+      } else if (!hasCreationDate) {
+        data.creationDate = data.modifiedDate;
+      }
+    }
+
+    data.hasAppearance = false;
+
+    return new TextAnnotation({ data, });
+  }
+
   /**
    * @private
    */
@@ -1312,6 +1338,8 @@ class PopupAnnotation extends Annotation {
       // the group attributes from the primary annotation.
       parentItem = parentItem.get("IRT");
     }
+
+    this.data.open = dict.get('Open') || false;
 
     if (!parentItem.has("M")) {
       this.data.modificationDate = null;

@@ -435,6 +435,53 @@ class Page {
     });
   }
 
+  overrideAnnotations(overrides) {
+    return this._parsedAnnotations.then((annots) => {
+      let handledOverrides = [];
+      for (let i = annots.length - 1,
+        ii = annots.length; i >= 0 && i < ii; i--) {
+        let annot = annots[i];
+        let override = overrides[annot.data.id];
+
+        handledOverrides.push(annot.data.id);
+
+        if (override && override !== null) { // apply override
+          annot.applyOverride(override);
+        } else if (override === null) { // remove when override is null
+          annots.splice(i, 1);
+        }
+
+      }
+      // add new annots - for now just replys - without appearences
+      let newAnnots = Object.getOwnPropertyNames(overrides).filter(
+        (name) => {
+
+          return overrides[name] !== null &&
+            !handledOverrides.find((it) => {
+              return it === name;
+            });
+        });
+
+      const newAnnotationPromises = [];
+
+      for (let i = 0, ii = newAnnots.length; i < ii; i++) {
+        newAnnotationPromises.push(AnnotationFactory.createReply(newAnnots));
+      }
+
+      return Promise.all(newAnnotationPromises).then(function (annotations) {
+        annots.push.apply(annots, annotations.filter(function (annotation) {
+          return !!annotation;
+        }));
+        return annots.map(function (it) {
+          return it.data;
+        });
+      }, function (reason) {
+        warn(`overrideAnnotations: "${reason}".`);
+        return [];
+      });
+    });
+  }
+
   get _parsedAnnotations() {
     const parsedAnnotations = this.pdfManager
       .ensure(this, "annotations")

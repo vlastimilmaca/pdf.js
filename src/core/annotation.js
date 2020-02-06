@@ -739,35 +739,48 @@ class MarkupAnnotation extends Annotation {
     }
 
     if (this.data.replyType === AnnotationReplyType.GROUP) {
-      let parent = dict.get('IRT');
+       // Subordinate annotations in a group should inherit
+      // the group attributes from the primary annotation.
+      const parent = dict.get("IRT");
 
-      this.data.title = stringToPDFString(parent.get('T') || '');
-      this.data.subject = stringToPDFString(parent.get('Subj') || '');
-      this.data.contents = stringToPDFString(parent.get('Contents') || '');
-      this.setCreationDate(parent);
+      this.data.title = stringToPDFString(parent.get("T") || "");
 
-      if (parent.has('M')) {
-        this.setModifiedDate(parent.get('M'));
+      this.setContents(parent.get("Contents"));
+      this.data.contents = this.contents;
+
+      if (!parent.has("CreationDate")) {
+        this.data.creationDate = null;
+      } else {
+        this.setCreationDate(parent.get("CreationDate"));
+        this.data.creationDate = this.creationDate;
       }
 
-      // parent's popup should be used
-      this.data.hasPopup = parent.has('Popup');
+      if (!parent.has("M")) {
+        this.data.modificationDate = null;
+      } else {
+        this.setModificationDate(parent.get("M"));
+        this.data.modificationDate = this.modificationDate;
+      }
 
-      if (!parent.has('C')) {
+      this.data.hasPopup = parent.has("Popup");
+
+      if (!parent.has("C")) {
         // Fall back to the default background color.
         this.data.color = null;
       } else {
-        this.setColor(parent.getArray('C'));
+        this.setColor(parent.getArray("C"));
         this.data.color = this.color;
       }
 
     } else {
-      this.data.hasPopup = dict.has('Popup');
+      this.data.title = stringToPDFString(dict.get("T") || "");
 
-      this.data.title = stringToPDFString(dict.get('T') || '');
-      this.data.subject = stringToPDFString(dict.get('Subj') || '');
+      this.setCreationDate(dict.get("CreationDate"));
+      this.data.creationDate = this.creationDate;
 
-      if (!dict.has('C')) {
+      this.data.hasPopup = dict.has("Popup");
+
+      if (!dict.has("C")) {
         // Fall back to the default background color.
         this.data.color = null;
       }
@@ -786,6 +799,18 @@ class MarkupAnnotation extends Annotation {
           this.data.subject = bytesToString(richText.getBytes());
       } */
     }
+  }
+
+   /**
+   * Set the creation date.
+   *
+   * @public
+   * @memberof MarkupAnnotation
+   * @param {string} creationDate - PDF date string that indicates when the
+   *                                annotation was originally created
+   */
+  setCreationDate(creationDate) {
+    this.creationDate = isString(creationDate) ? creationDate : null;
   }
 }
 
@@ -980,7 +1005,7 @@ class WidgetAnnotation extends Annotation {
     // cause errors when sending annotations to the main-thread (issue 10347).
     if (data.fieldType === "Sig") {
       data.fieldValue = null;
-      this.setFlags(AnnotationFlag.HIDDEN);
+      //this.setFlags(AnnotationFlag.HIDDEN);
     }
   }
 
@@ -1339,7 +1364,7 @@ class PopupAnnotation extends Annotation {
       parentItem = parentItem.get("IRT");
     }
 
-    this.data.open = dict.get('Open') || false;
+    this.data.open = parameters.dict.get('Open') || false;
 
     if (!parentItem.has("M")) {
       this.data.modificationDate = null;
@@ -1404,14 +1429,6 @@ class CircleAnnotation extends MarkupAnnotation {
     super(parameters);
 
     this.data.annotationType = AnnotationType.CIRCLE;
-  }
-}
-
-class FreeTextAnnotation extends MarkupAnnotation {
-  constructor(parameters) {
-    super(parameters);
-
-    this.data.annotationType = AnnotationType.FREETEXT;
   }
 }
 

@@ -122,9 +122,6 @@ class AnnotationElementFactory {
       case AnnotationType.FILEATTACHMENT:
         return new FileAttachmentAnnotationElement(parameters);
 
-      case AnnotationType.CARET:
-        return new CaretAnnotationElement(parameters);
-
       default:
         return new AnnotationElement(parameters);
     }
@@ -151,7 +148,7 @@ class AnnotationElement {
   }
 
   _processModificators() {
-    let replys = [], states = [], groups = [];
+    let replies = [], states = [], groups = [];
     let authors = [], authorsLast = {};
     if (this.modificators) {
       for (let i = 0, l = this.modificators.length; i < l; i++) {
@@ -173,7 +170,7 @@ class AnnotationElement {
             states.push(modification);
           }
         } else if (modification.replyType === 'R') {
-          replys.push(modification);
+          replies.push(modification);
         } else {
           groups.push(modification);
         }
@@ -187,7 +184,7 @@ class AnnotationElement {
       activeStates.push(state);
     }
 
-    this.replys = replys;
+    this.replies = replies;
     this.states = states;
     this.activeStates = activeStates;
     this.groups = groups;
@@ -341,7 +338,7 @@ class AnnotationElement {
       modificationDate: data.modificationDate,
       contents: data.contents,
       hideWrapper: true,
-      replys: this.replys,
+      replies: this.replies,
       states: this.activeStates,
     });
     const popup = popupElement.render();
@@ -734,7 +731,7 @@ class PopupAnnotationElement extends AnnotationElement {
     // Do not render popup annotations for parent elements with these types as
     // they create the popups themselves (because of custom trigger divs).
 
-    const isRenderable = !!(parameters.data.title && parameters.data.contents &&
+    let isRenderable = !!(parameters.data.title && parameters.data.contents &&
       !POPUP_IGNORE_TYPES.includes(parameters.data.parentType));
 
     if (parameters.modificators) {
@@ -793,7 +790,7 @@ class PopupAnnotationElement extends AnnotationElement {
       title: this.data.title,
       modificationDate: this.data.modificationDate,
       contents: this.data.contents,
-      replys: this.replys,
+      replies: this.replies,
       states: this.activeStates,
     });
 
@@ -820,7 +817,7 @@ class PopupElement {
     this.modificationDate = parameters.modificationDate;
     this.contents = parameters.contents;
     this.hideWrapper = parameters.hideWrapper || false;
-    this.replys = parameters.replys;
+    this.replies = parameters.replies;
     this.states = parameters.states;
 
     this.pinned = false;
@@ -858,7 +855,6 @@ class PopupElement {
       popup.style.backgroundColor = Util.makeCssRgb(r | 0, g | 0, b | 0);
     }
 
-    let contents = this._formatContents(this.contents);
     let title = document.createElement('h1');
     this.statusElement = this._createStatusElement();
 
@@ -871,7 +867,7 @@ class PopupElement {
     const dateObject = PDFDateString.toDateObject(this.modificationDate);
     if (dateObject) {
       const modificationDate = document.createElement("span");
-      modificationDate.textContent = "{{date}}, {{time}}";
+      modificationDate.textContent = dateObject.toLocaleDateString() + ", "+ dateObject.toLocaleTimeString();
       modificationDate.dataset.l10nId = "annotation_date_string";
       modificationDate.dataset.l10nArgs = JSON.stringify({
         date: dateObject.toLocaleDateString(),
@@ -899,44 +895,35 @@ class PopupElement {
 
     popup.addEventListener('click', this._hide.bind(this, true));
 
-    popup.appendChild(title);
-
     if (this.statusElement !== null) {
       popup.appendChild(this.statusElement);
     }
 
     popup.appendChild(contents);
 
-    // Attach the event listeners to the trigger element.
-    this.trigger.addEventListener("click", this._toggle.bind(this));
-    this.trigger.addEventListener("mouseover", this._show.bind(this, false));
-    this.trigger.addEventListener("mouseout", this._hide.bind(this, false));
-    popup.addEventListener("click", this._hide.bind(this, true));
-
     wrapper.appendChild(popup);
     return wrapper;
   }
 
   _createStatusElement() {
-    let hasReplys = this.replys.length > 0;
+    let hasReplies = this.replies.length > 0;
     let hasStates = this.states.length > 0;
 
-    if (hasReplys || hasStates) {
+    if (hasReplies || hasStates) {
       let status = document.createElement('div');
-      status.appendChild(document.createTextNode('( '));
 
-      if (hasReplys) {
-        let replys = document.createElement('span');
-        replys.setAttribute('data-l10n-id', 'annotation_replys_count');
-        replys.setAttribute('data-l10n-args',
-          '{"count":"' + this.replys.length + '"}');
-        replys.textContent = 'replys: ' + this.replys.length;
-        status.appendChild(replys);
+      if (hasReplies) {
+        let replies = document.createElement('span');
+        replies.setAttribute('data-l10n-id', 'annotation_replies_count');
+        replies.setAttribute('data-l10n-args',
+          '{"count":"' + this.replies.length + '"}');
+        replies.textContent = 'replies: ' + this.replies.length;
+        status.appendChild(replies);
       }
 
-      if (hasReplys && hasStates) {
-        status.appendChild(document.createTextNode(', '));
-      }
+      // if (hasReplies && hasStates) {
+      //   status.appendChild(document.createTextNode(', '));
+      // }
 
       if (hasStates) {
         let states = document.createElement('span');
@@ -947,8 +934,6 @@ class PopupElement {
 
         status.appendChild(states);
       }
-
-      status.appendChild(document.createTextNode(' )'));
 
       return status;
     }
@@ -1477,30 +1462,6 @@ class StrikeOutAnnotationElement extends AnnotationElement {
    */
   render() {
     this.container.className = "strikeoutAnnotation";
-
-    if (!this.data.hasPopup) {
-      this._createPopup(this.container, null, this.data);
-    }
-    return this.container;
-  }
-}
-
-class CaretAnnotationElement extends AnnotationElement {
-  constructor(parameters) {
-    let isRenderable = !!(parameters.data.hasPopup ||
-      parameters.data.title || parameters.data.contents);
-    super(parameters, isRenderable, /* ignoreBorder = */ true);
-  }
-
-  /**
-   * Render the caret annotation's HTML element in the empty container.
-   *
-   * @public
-   * @memberof CaretAnnotationElement
-   * @returns {HTMLSectionElement}
-   */
-  render() {
-    this.container.className = 'caretAnnotation';
 
     if (!this.data.hasPopup) {
       this._createPopup(this.container, null, this.data);
